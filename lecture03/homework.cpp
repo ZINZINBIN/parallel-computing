@@ -17,6 +17,9 @@
 #include <math.h>
 #define EPS 1e-8
 
+void init_random_array(float *x, int n_size, float min, float max);
+void init_random_matrix(float **A, int m, int n, float min, float max);
+float get_random_number(float min, float max);
 float** generate_matrix(int m, int n);
 float* generate_array(int m);
 void initiate(float *x, int n_size, int method);
@@ -25,64 +28,100 @@ void check_solution_validity(float **A, float *B, float *x, int m, int n, float 
 float CalculateNormDifference(float *x1, float *x2, int n);
 float *JacobiMethodSerial(float **A, float *B, int m, int n, int max_iters, float tolerance);
 float *JacobiMethodParallel(float **A, float *B, int m, int n, int max_iters, float tolerance) ;
+void print_solution(float *x, int n_size);
+
 using namespace std;
 
 int main(void){
 
-    int THREADS_NUM = 16;
-    double start, end;
-
-    cout << THREADS_NUM << "-threads set by me" << endl;
+    int THREADS_NUM = 128;
     omp_set_num_threads(THREADS_NUM);
+    cout << THREADS_NUM << "-threads set" << endl;
     cout << omp_get_num_procs() << "-procs" << endl;
     cout << omp_get_max_threads() << "-max.threads" << endl;
     cout << omp_get_num_threads() << "-threads now" << endl;
     cout << omp_get_thread_num() << "-th thread now" << endl;
-    cout << "check this region parallel : " << omp_in_parallel() << endl;
-    cout << "Fork" << endl;
 
     // Parallelize a program to solve a linear equation Ax = b 
-    // (A: matrix, b: vector) by using the Jacobi method
-    float tolerance = 1e-8;
-    int m = 3;
-    int n = 3;
+    // solve Ax = B by using Jacobi method
+    float tolerance = EPS;
+    int m = 1024;
+    int n = 1024;
+    int max_iter = 64;
     float **A = generate_matrix(m,n);
     float *B = generate_array(m);
 
-    A[0][0] = 4;
-    A[0][1] = -1;
-    A[0][2] = -1;
-    A[1][0] = -2;
-    A[1][1] = 6;
-    A[1][2] = 1;
-    A[2][0] = -1;
-    A[2][1] = 1;
-    A[2][2] = 7;
-
-    B[0] = 3;
-    B[1] = 9;
-    B[2] = -6;
+    // initiate matrix and array with each component extracted from range of (min, max) randomly
+    float min = 1.0;
+    float max = 5.0;
+    init_random_matrix(A, m, n, min, max);
+    init_random_array(B, m, min, max);
     
-    float *solution = JacobiMethodSerial(A,B,3,3,32,tolerance);
+    // Jacobi method with serial computing
+    cout << "------------Serial jacobi method-------------"<<endl;
+    float *solution = JacobiMethodSerial(A,B,m,n,max_iter,tolerance);
     check_solution_validity(A,B,solution,m,n,tolerance);
 
-    cout << "# solution for serial jacobi method"<<endl;
-
-    for(int i = 0; i < n; i++){
-        cout << "x[" << i << "] : " << solution[i] << endl;
-    }
-
-    float *solution_parallel = JacobiMethodParallel(A,B,3,3,32,tolerance);
+    // cout << "# solution for serial jacobi method"<<endl;
+    // print_solution(solution, m);
+    
+    // Jacobi method with parallel computing
+    cout << "------------Parallel jacobi method-----------"<<endl;
+    float *solution_parallel = JacobiMethodParallel(A,B,m,n,max_iter,tolerance);
     check_solution_validity(A,B,solution_parallel, m,n,tolerance);
 
-    cout << "# solution for parallel jacobi method" << endl;
+    // cout << "# solution for parallel jacobi method" << endl;
+    // print_solution(solution_parallel, m);
 
-    for (int i = 0; i < n; i++)
-    {
-        cout << "x[" << i << "] : " << solution[i] << endl;
+
+    // Check speedup with a large matrix
+    // process 1 : fixed number of threads(=128), varying matrix size(m = 4,16,64,256,1024,...)
+    cout << "------------Check Speedup : fixed # of threads with varying matrix size-----------"<<endl;
+
+    omp_set_num_threads(128);
+    for(int i = 1; i < 8; i++){
+        m = int(pow(4,i));
+        n = m;
+        A = generate_matrix(m,n);
+        B = generate_array(m);
+
+        init_random_matrix(A, m, n, min, max);
+        init_random_array(B,m,min,max);
+        cout << "matrix size : " << m << ", ";
+        solution_parallel = JacobiMethodParallel(A,B,m,n,max_iter,tolerance);
     }
+    
+    // process 2 : fixed matrix size, varying number of threads
+    cout << "------------Check Speedup : fixed matrix size with varying # of threads-----------"<<endl;
+    m = 1024;
+    n = 1024;
+    A = generate_matrix(m,n);
+    B = generate_array(m);
+    init_random_matrix(A, m, n, min, max);
+    init_random_array(B,m,min,max);
 
+    for(int i = 1; i < 10; i++){
+        int thread_num = int(pow(2,i));
+        cout << "# of threads : " << thread_num << ", ";
+        omp_set_num_threads(thread_num);
+        solution_parallel = JacobiMethodParallel(A,B,m,n,max_iter,tolerance);
+    }
     return 0;
+}
+
+void print_solution(float *x, int n_size){
+    /*
+    for (int i = 0; i < n_size; i++)
+    {
+        cout << "x[" << i << "] : " << x[i] << endl;
+    }
+    */
+    cout << "[";
+    for (int i = 0; i < n_size-1; i++)
+    {
+        cout << x[i] << ",";
+    }
+    cout << x[n_size-1] << "]" << endl;
 }
 
 float **generate_matrix(int m, int n){
@@ -128,6 +167,25 @@ void initiate(float *x, int n_size, int method)
     }
 }
 
+void init_random_array(float *x, int n_size, float min, float max){
+    for(int i = 0; i < n_size; i++){
+        x[i] = get_random_number(min, max);
+    }
+}
+
+void init_random_matrix(float **A, int m, int n, float min, float max){
+    for (int i = 0; i < m; i++){
+        for(int j = 0; j<n;j++){
+            A[i][j] = get_random_number(min, max);
+        }
+    }
+}
+
+float get_random_number(float min, float max){
+    float fraction = 1.0 / (max - min + 1.0);
+    return min + (max - min + 1.0) * (std::rand() * fraction);
+}
+
 void copy_array(float *x, float *x_copy, int n_size, int method)
 {
     // serial initiate : 0
@@ -141,7 +199,7 @@ void copy_array(float *x, float *x_copy, int n_size, int method)
     }
     else
     {
-#pragma omp parallel for schedule(dynamic, 1)
+    #pragma omp parallel for schedule(dynamic, 1)
         for (int i = 0; i < n_size; i++)
         {
             x_copy[i] = x[i];
@@ -179,10 +237,12 @@ float CalculateNormDifference(float *x1, float *x2, int n)
      * n : length of array(x1 and x2 should be equal)
      */
     float difference = 0;
+    #pragma omp parallel for schedule(dynamic, 1) reduction(+:difference)
     for (int i = 0; i < n; i++)
     {
         difference += pow(abs(x1[n] - x2[n]), 2);
     }
+
     difference /= n;
     difference = pow(difference, 0.5); // sqrt(sum of (x1-x2)^2 / n)
     return difference;
@@ -228,9 +288,8 @@ float* JacobiMethodSerial(float **A, float *B, int m, int n, int max_iters, floa
         }
         else
         {
-            continue;
+            copy_array(x_new, x, n, 0);
         }
-        copy_array(x_new, x, n, 0);
     }
     // time check : end
     auto end = std::chrono::high_resolution_clock::now();
@@ -287,9 +346,8 @@ float* JacobiMethodParallel(float **A, float *B, int m, int n, int max_iters, fl
         }
         else
         {
-            continue;
+            copy_array(x_new, x, n, 1);
         }
-        copy_array(x_new, x, n, 1);
     }
     // time check : end
     auto end = std::chrono::high_resolution_clock::now();
