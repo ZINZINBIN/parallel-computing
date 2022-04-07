@@ -1,12 +1,12 @@
-/*
-# Assignment
-(1) Sections example 만들기
-- 어느 thread가 어느 부분을 맡았는지 확인해보기. 여러번 실행해보기
-(2) Matrix Vector Multiplication
-- 곱한 값을 아는 행렬과 벡터로 시험해보기
-- 큰 규모의 행렬과 벡터에 대해 schedule clause 적용해보고 어느 thread가 어느 부분을 맡았는지 확인해보기
-(3) 첫번째 과제 2주 후 마감. 3월 25일 과제 오픈시 2주 후에 마감할 예정
-*/
+/**
+ * @file homework.cpp
+ * @author KIM JINSU(김진수, 2019-27420)
+ * @brief Parallelize a program to solve a linear equation Ax = b by using the Jacobi method
+ * @date 2022-04-07
+ * step 1. Test your program (for checking accuracy) with a linear equation 
+ * step 2. Check your program's speedup with a large matrix.
+ * step 3. Describe your effort to enhance efficiency.
+ */
 
 #include <iostream>
 #include <omp.h>
@@ -15,7 +15,7 @@
 #include <vector>
 #include <chrono>
 #include <math.h>
-#define EPS 1e-8
+#define EPS 1e-12
 
 void init_random_array(float *x, int n_size, float min, float max);
 void init_random_matrix(float **A, int m, int n, float min, float max);
@@ -25,7 +25,7 @@ float* generate_array(int m);
 void initiate(float *x, int n_size, int method);
 void copy_array(float *x, float *x_copy, int n_size, int method) ;
 void check_solution_validity(float **A, float *B, float *x, int m, int n, float tolerance) ;
-float CalculateNormDifference(float *x1, float *x2, int n);
+float CalculateNormDifference(float *x1, float *x2, int n, int is_parallel);
 float *JacobiMethodSerial(float **A, float *B, int m, int n, int max_iters, float tolerance);
 float *JacobiMethodParallel(float **A, float *B, int m, int n, int max_iters, float tolerance) ;
 void print_solution(float *x, int n_size);
@@ -34,6 +34,11 @@ using namespace std;
 
 int main(void){
 
+    // Parallelize a program to solve a linear equation Ax = b
+    // solve Ax = B by using Jacobi method
+
+    cout << "### step 0. setting ###" << endl;
+    cout << endl;
     int THREADS_NUM = 128;
     omp_set_num_threads(THREADS_NUM);
     cout << THREADS_NUM << "-threads set" << endl;
@@ -41,9 +46,35 @@ int main(void){
     cout << omp_get_max_threads() << "-max.threads" << endl;
     cout << omp_get_num_threads() << "-threads now" << endl;
     cout << omp_get_thread_num() << "-th thread now" << endl;
+    cout <<endl;
+    
+    /*
+    * step 1. test program for checking accuarcy
+    * example : A = [[4,-1,-1],[-2,6,1],[-1,1,7]], B = [3,9,-6], x = [0.75, 1.5, -0.857]
+    */
 
-    // Parallelize a program to solve a linear equation Ax = b 
-    // solve Ax = B by using Jacobi method
+    float **A_example = generate_matrix(3,3);
+    float *B_example = generate_array(3);
+    A_example[0][0] = 4; A_example[0][1] = -1; A_example[0][2] = -1;
+    A_example[1][0] = -2; A_example[1][1] = 6; A_example[1][2] = 1;
+    A_example[2][0] = -1; A_example[2][1] = 1; A_example[2][2] = 7;
+    B_example[0] = 3; B_example[1] = 9; B_example[2] = -6;
+
+    cout << "### step 1. test program for checking accuracy ######" << endl;
+    cout << endl;
+    float *solution_example = JacobiMethodSerial(A_example, B_example, 3, 3, 32, EPS);
+    print_solution(solution_example, 3);
+    cout << endl;
+
+    /*
+     * step 2. test program's speedup with a large matrix
+     * matrix size : 1024 x 1024 fixed, initalized with random numbers in range of (min = 1, max = 5)
+     * max iteration : 64 epoch
+     */
+
+    cout << "### step 2. test program's speedup with a large matrix ###" << endl;
+    cout << endl;
+
     float tolerance = EPS;
     int m = 1024;
     int n = 1024;
@@ -61,61 +92,68 @@ int main(void){
     cout << "------------Serial jacobi method-------------"<<endl;
     float *solution = JacobiMethodSerial(A,B,m,n,max_iter,tolerance);
     check_solution_validity(A,B,solution,m,n,tolerance);
-
-    // cout << "# solution for serial jacobi method"<<endl;
-    // print_solution(solution, m);
     
     // Jacobi method with parallel computing
     cout << "------------Parallel jacobi method-----------"<<endl;
     float *solution_parallel = JacobiMethodParallel(A,B,m,n,max_iter,tolerance);
     check_solution_validity(A,B,solution_parallel, m,n,tolerance);
 
-    // cout << "# solution for parallel jacobi method" << endl;
-    // print_solution(solution_parallel, m);
+    /*
+     * Extra(1): check speedup with varying matrix size and fixing number of threads
+     * # of threads : 128 fixed
+     * matrix size : 4, 16, 64, 256, ...
+     * max iteration : 64 epoch
+     * tolerance : 1e-8(common)
+     */
 
-
-    // Check speedup with a large matrix
-    // process 1 : fixed number of threads(=128), varying matrix size(m = 4,16,64,256,1024,...)
-    cout << "------------Check Speedup : fixed # of threads with varying matrix size-----------"<<endl;
+    cout << endl;
+    cout << "------------Check Speedup : fixed # of threads / varying matrix size-----------" << endl;
+    cout << endl;
 
     omp_set_num_threads(128);
-    for(int i = 1; i < 8; i++){
-        m = int(pow(4,i));
+    for (int i = 1; i < 8; i++)
+    {
+        m = int(pow(4, i));
         n = m;
-        A = generate_matrix(m,n);
+        A = generate_matrix(m, n);
         B = generate_array(m);
 
         init_random_matrix(A, m, n, min, max);
-        init_random_array(B,m,min,max);
+        init_random_array(B, m, min, max);
         cout << "matrix size : " << m << ", ";
-        solution_parallel = JacobiMethodParallel(A,B,m,n,max_iter,tolerance);
+        solution_parallel = JacobiMethodParallel(A, B, m, n, max_iter, tolerance);
     }
-    
-    // process 2 : fixed matrix size, varying number of threads
-    cout << "------------Check Speedup : fixed matrix size with varying # of threads-----------"<<endl;
+
+    /*
+     * Extra(2): check speedup with varying number of threads and fixing matrix size
+     * # of threads : 2, 4, 8, 16, 32, ...
+     * matrix size : 1024 fixed
+     * max iteration : 64 epoch
+     * tolerance : 1e-8(common)
+     */
+
+    cout << endl;
+    cout << "------------Check Speedup : fixed matrix size / varying # of threads-----------" << endl;
+    cout << endl;
     m = 1024;
     n = 1024;
-    A = generate_matrix(m,n);
+    A = generate_matrix(m, n);
     B = generate_array(m);
     init_random_matrix(A, m, n, min, max);
-    init_random_array(B,m,min,max);
+    init_random_array(B, m, min, max);
 
-    for(int i = 1; i < 10; i++){
-        int thread_num = int(pow(2,i));
+    for (int i = 1; i < 8; i++)
+    {
+        int thread_num = int(pow(2, i));
         cout << "# of threads : " << thread_num << ", ";
         omp_set_num_threads(thread_num);
-        solution_parallel = JacobiMethodParallel(A,B,m,n,max_iter,tolerance);
+        solution_parallel = JacobiMethodParallel(A, B, m, n, max_iter, tolerance);
     }
+
     return 0;
 }
 
 void print_solution(float *x, int n_size){
-    /*
-    for (int i = 0; i < n_size; i++)
-    {
-        cout << "x[" << i << "] : " << x[i] << endl;
-    }
-    */
     cout << "[";
     for (int i = 0; i < n_size-1; i++)
     {
@@ -218,7 +256,7 @@ void check_solution_validity(float **A, float *B, float *x, int m, int n, float 
             y[i] += A[i][j] * x[j];
         }
     }
-    if (CalculateNormDifference(y, B, m) < tolerance)
+    if (CalculateNormDifference(y, B, m, 0) < tolerance)
     {
         cout << "solution x is valid" << endl;
     }
@@ -228,7 +266,7 @@ void check_solution_validity(float **A, float *B, float *x, int m, int n, float 
     }
 }
 
-float CalculateNormDifference(float *x1, float *x2, int n)
+float CalculateNormDifference(float *x1, float *x2, int n, int is_parallel)
 {
     /**
      * @brief Calculate the L2 Norm of |x1 - x2|
@@ -237,12 +275,19 @@ float CalculateNormDifference(float *x1, float *x2, int n)
      * n : length of array(x1 and x2 should be equal)
      */
     float difference = 0;
-    #pragma omp parallel for schedule(dynamic, 1) reduction(+:difference)
-    for (int i = 0; i < n; i++)
-    {
-        difference += pow(abs(x1[n] - x2[n]), 2);
+    if(is_parallel){
+        #pragma omp parallel for schedule(dynamic) reduction(+: difference)
+        for (int i = 0; i < n; i++)
+        {
+            difference += pow(abs(x1[n] - x2[n]), 2);
+        }
     }
-
+    else{
+        for (int i = 0; i < n; i++)
+        {
+            difference += pow(abs(x1[n] - x2[n]), 2);
+        }
+    }
     difference /= n;
     difference = pow(difference, 0.5); // sqrt(sum of (x1-x2)^2 / n)
     return difference;
@@ -262,6 +307,7 @@ float* JacobiMethodSerial(float **A, float *B, int m, int n, int max_iters, floa
     float *x = new float[n];
     float *x_new = new float[n];
     float sum = 0;
+    int iteration = 0;
 
     // time check : start
     auto start = std::chrono::high_resolution_clock::now();
@@ -282,8 +328,10 @@ float* JacobiMethodSerial(float **A, float *B, int m, int n, int max_iters, floa
             x_new[i] /= A[i][i];
         }
 
-        if (CalculateNormDifference(x_new, x, n) < tolerance)
-        {
+        iteration ++;
+
+        if (CalculateNormDifference(x_new, x, n, 0) < tolerance)
+        {   
             break;
         }
         else
@@ -295,7 +343,7 @@ float* JacobiMethodSerial(float **A, float *B, int m, int n, int max_iters, floa
     auto end = std::chrono::high_resolution_clock::now();
 
     double elapsed_time_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    cout << "Jacobi method runtime : " << elapsed_time_ms << endl;
+    cout << "Jacobi method runtime : " << elapsed_time_ms << ", iters for convergence : " << iteration << endl;
 
     return x_new;
 };
@@ -319,6 +367,7 @@ float* JacobiMethodParallel(float **A, float *B, int m, int n, int max_iters, fl
     float *x = new float[n];
     float *x_new = new float[n];
     float sum = 0;
+    int iteration = 0;
 
     // time check : start
     auto start = std::chrono::high_resolution_clock::now();
@@ -340,7 +389,9 @@ float* JacobiMethodParallel(float **A, float *B, int m, int n, int max_iters, fl
             x_new[i] /= A[i][i];
         }
 
-        if (CalculateNormDifference(x_new, x, n) < tolerance)
+        iteration ++;
+
+        if (CalculateNormDifference(x_new, x, n, 1) < tolerance)
         {
             break;
         }
@@ -353,7 +404,7 @@ float* JacobiMethodParallel(float **A, float *B, int m, int n, int max_iters, fl
     auto end = std::chrono::high_resolution_clock::now();
 
     double elapsed_time_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    cout << "Jacobi method runtime : " << elapsed_time_ms << endl;
+    cout << "Jacobi method runtime : " << elapsed_time_ms << ", iters for convergence : " << iteration << endl;
 
     return x_new;
 };
