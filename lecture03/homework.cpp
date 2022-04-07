@@ -6,6 +6,18 @@
  * step 1. Test your program (for checking accuracy) with a linear equation 
  * step 2. Check your program's speedup with a large matrix.
  * step 3. Describe your effort to enhance efficiency.
+ * 
+ * 
+ * Describe your effort to enhance efficiency
+ * Jacobi Method는 Ax = b의 해를 구하기 위해 iterative하게 해를 근사적으로 구하는 방법론이다. 
+ * 이에 따라, for문은 크게 3가지로 나뉘게 되는데, 첫번째 for문은 iteration에 대응되는 for문이며, 
+ * 나머지 두개의 for문은 각각 행과 열의 인덱스를 순차적으로 호출하기 위한 for문이다. 
+ * 따라서, 첫번째 for문에서는 parallel block을 선언하지 않고, iteration for문 안에 위치한 두번째 for문부터 parallel block을 선언하였다. 
+ * 설정한 thread 갯수에 따라, 각각의 thread에 대해 sheduler를 활용하여 dynamic으로 행의 갯수 / thread 갯수로 나눈 만큼 작업량을 할당하였다. 
+ * 모든 연산이 동일하게 (b-sum of A_ij * xj) / A_ii 이므로 task가 거의 동일하다고 볼 수 있으므로 static으로 해도 무방하다. 
+ * 이전 x와 Jacobi method를 통해 구한 새로운 x 사이의 L2-Norm을 구해 수렴 조건을 판단하는 과정에서도 parallel block을 선언하여 병렬화를 진행시켰다. 
+ * 또한, 수렴을 만족하지 않은 경우, 이전 x 또한 새로운 x 값으로 복사를 해와야 하는데, 이 과정에서도 parallel block을 선언하여 병렬화로 복사 과정을 구현하였다.  
+ * 
  */
 
 #include <iostream>
