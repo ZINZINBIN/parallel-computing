@@ -111,7 +111,7 @@ int main(void){
             y[i] = sum;
         }
         
-        #pragma omp maste
+        #pragma omp master
         {
             end_time = omp_get_wtime();
 
@@ -122,33 +122,50 @@ int main(void){
         }
         
     }   
-    /*
+
+    int op = 1;
+    int idx_row = 0;
+    int idx_col = 0;
+    int target = 100;
+    int **a_matrix = new int*[100];
+
+    for(int i = 0; i < 100; i++){
+        a_matrix[i] = new int[1000];
+    }
+
+    a_matrix[42][994] = target;
+
+    int *coord = new int[2];
+    start_time = 0;
+    end_time = 0;
+
     // task direcive example
-    #pragma omp parallel shared(a, coord , op,
+    #pragma omp parallel shared(a_matrix, coord , op, target, start_time, end_time)
     {
         #pragma omp master
         {
-            while (op && i <50){
-                #pragma omp task firstprivate(i) private(j)
+            start_time = omp_get_wtime();
+            while (op && idx_row <50){
+                #pragma omp task firstprivate(idx_row) private(idx_col)
                 {
-                    for (j=0; j<10000; j++){
-
+                    for (idx_col=0; idx_col<1000; idx_col++){
+                        if(a_matrix[idx_row][idx_col] == target){
+                            coord[0] = idx_row;
+                            coord[1] = idx_col;
+                            op = 0;
+                        }
                     }
+                    idx_row++;
                 }
             }
-            
-        {
-         {
-        if (a[i][j]==target){
-            coord[0] = i ; coord [1] = j; op = 0;        
+            end_time = omp_get_wtime();
+
+            #pragma omp critical(printing)
+            {
+                cout << "task derivative master thread runtime : " << end_time - start_time << endl;
             }
-        
-        
-        }
-        i
         }
     }
-    */
 
     return 0;
 }
