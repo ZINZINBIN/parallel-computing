@@ -1,5 +1,5 @@
 /**
- * @file main.cpp
+ * @file numerical_integration.cpp
  * @author zinzinbin
  * @brief Using OpenMPI, numerical integration code build up
  * @version 0.1
@@ -59,8 +59,7 @@ int main(int argc, char *argv[]){
     // Braodcast a buffer from a sending process to all other processes
     MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
     dx = (xr - xl) / n;
-    sum = 0; // 이걸 위에서 초기화했을 경우에는 해가 수렴 xx 왜 이럴까?
-
+    
     for(i = rank; i < n; i+=size){
         x = xl + dx * i;
         sum += func(x,a,b,c);
