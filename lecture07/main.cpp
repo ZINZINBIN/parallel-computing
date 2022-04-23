@@ -1,13 +1,13 @@
 /**
  * @file main.cpp
  * @author zinzinbin
- * @brief matrix multiplication with OpenMPI
+ * @brief matrix multiplication with OpenMPI + non blocking method
  * @version 0.1
- * @date 2022-04-15
+ * @date 2022-04-21
  * 
  * How to execute
- * (1) mpic++ matrix_multiplication.cpp -o matrix_multiplication.out
- * (2) mpirun -np <number of processes> ./matrix_multiplication.out
+ * (1) mpic++ matrix_multiplication_non_blocking.cpp -o matrix_multiplication_non_blocking.out
+ * (2) mpirun -np <number of processes> ./matrix_multiplication_non_blocking.out
  */
 
 #include <iostream>
@@ -19,6 +19,7 @@
 #include <math.h>
 #include <cmath>
 #define EPS 1e-8
+#define MAXPROC 16
 
 using namespace std;
 
@@ -40,8 +41,8 @@ int main(int argc, char *argv[]){
     MPI_Comm_size(MPI_COMM_WORLD, &size); // get number of processes
     MPI_Comm_rank(MPI_COMM_WORLD, &rank); // get current process id
 
-    int m = 1024;
-    int n = 1024;
+    int m = 16;
+    int n = 16;
     float **A = generate_matrix(m,n);
     float *x = generate_array(n);
     float *y = generate_array(m);
@@ -65,21 +66,25 @@ int main(int argc, char *argv[]){
     int row = 0;
     int po = 1;
     MPI_Status status;
+    MPI_Request send_req[MAX_PROC], recv_req[MAX_PROC];
     float *buffer;
 
     if(rank == 0){
         double start = MPI_Wtime();
         numsent = 0;
-        MPI_Bcast(&x[0], n, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
         for(int i = 0; i < size - 1 && i < m; i++){
-            MPI_Send(&A[i][0], n, MPI_FLOAT, i+1, i, MPI_COMM_WORLD); // *ptr_buffer, count, MPI_Datatype, target, tag, MPI_Comm
+            MPI_Isend(&A[i][0], 1, MPI_FLOAT, i+1, i, MPI_COMM_WORLD, &send_req[i]); // *ptr_buffer, count, MPI_Datatype, target, tag, MPI_Comm
+            MPI_Isend(&x[0], 1, MPI_FLOAT, i+1, i, MPI_COMM_WORLD, &send_req[i]);
             numsent ++;
             cout << "MPI send to rank : " << i+1 << " complete" << endl;
         }
 
+        MPI_Waitall(size - 1, &send_req[1], &status);
+        cout << "MPI rank 0 process receiving from all other processes" << endl;
+
         for(int i = 0; i < m; i++){
-            MPI_Recv(&ans, 1, MPI_FLOAT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+            MPI_Irecv(&ans, 1, MPI_FLOAT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
             sender = status.MPI_SOURCE;
             row = status.MPI_TAG;
             y[row] = ans;
@@ -109,13 +114,13 @@ int main(int argc, char *argv[]){
                 for(int j = 0; j < n; j++){
                     ans += buffer[j] * x[j];
                 }
-
                 MPI_Send(&ans, 1, MPI_FLOAT, 0, row, MPI_COMM_WORLD);
             }
             else{
                 po = 0;
             }
         }
+
         free(buffer);
     }
 
@@ -123,7 +128,6 @@ int main(int argc, char *argv[]){
     MPI_Finalize();
 
     // check parallel computing solution
-
     if(rank == 0){
         check_solution_validity(A,x,y,m,n,EPS);
     }

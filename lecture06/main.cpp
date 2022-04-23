@@ -35,12 +35,12 @@ int main(int argc, char *argv[]){
     if(rank == 0){
         baton = 1;
         MPI_Send(&baton, 1, MPI_INT, 1, 999, MPI_COMM_WORLD);
-        MPI_Recv(&baton, 1, MPI_INT, size -1, 999, MPI_COMM_WORLD, &status);
+        MPI_Recv(&baton, 1, MPI_INT, size -1, 999, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // &status
 
         cout << "baton : " << baton << ", Process : " << size - 1 << " --> Process : 0"<<endl;
     }
     else{
-        MPI_Recv(&baton, 1, MPI_INT, rank - 1, 999, MPI_COMM_WORLD, &status);
+        MPI_Recv(&baton, 1, MPI_INT, rank - 1, 999, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // &status
         cout << "baton : " << baton << ", Process : " << rank - 1 << " --> Process : " << rank <<endl;
         MPI_Send(&baton, 1, MPI_INT, (rank + 1) % size, 999, MPI_COMM_WORLD);
     }
