@@ -6,8 +6,8 @@
  * @date 2022-05-03
  *
  * How to execute
- * (1) mpic++ homework.cpp -o homework.out
- * (2) mpirun -np <number of processes> ./homework.out
+ * (1) mpic++ adaptive_transpose.cpp -o adaptive_transpose.out
+ * (2) mpirun -np <number of processes> ./addaptive_transpose.out
  */
 
 #include <iostream>
@@ -33,15 +33,14 @@ void initiate_matrix(float **A, int m, int n);
 float **transpose_matrix(float **A, int m, int n);
 int check_coincidency(float **A, float **B, int m, int n, float eps);
 void print_matrix(float **A, int m, int n);
-void transpose(float **A, int m, int n)
+void transpose(float **A, int m, int n);
 
 int main(int argc, char *argv[]){
 
     int size, rank;
-    int N = 8;
+    int N = 8 * 16;
     float eps = EPS;
     double p_time = 0; // time for execution
-    double p_time_avg = 0; // average time for execution
     double c_time = 0; // time for communication
 
     MPI_Init(&argc, &argv);
@@ -54,178 +53,108 @@ int main(int argc, char *argv[]){
     float **A = generate_matrix(m, n);
     initiate_matrix(A, m, n);
 
-    if (rank == 0){
-        cout << "matrix A : (" << m << "," << n << ")" << endl;
-        print_matrix(A,m,n);
+    if(m%size != 0 || n%size !=0){
+        if(rank == 0){
+            cout << "Error : dimensions of matrix should be divided by number of processes!" << endl;
+        }
+        MPI_Finalize();
+        return -1;
+    }
+    else{
+        if (rank == 0){
+            cout << "matrix A : (" << m << "," << n << ")" << endl;
+            if(m < 16 && n < 16){
+                print_matrix(A,m,n);
+            }
+        }
     }
 
     // convert matrix A to 1D array
     float *A_1D = convertMat2Array(A, m, n);
 
     // transpose of A : real value
+    // time check
+    auto start = std::chrono::high_resolution_clock::now();
+
     float **A_T = transpose_matrix(A, m, n);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    double exec_time = std::chrono::duration<double>(end - start).count();
+
+    if(rank == 0){
+        printf("transposition without MPI(s) : %3.5f \n", exec_time);
+        // cout << "transposition without MPI(s) : " << exec_time << endl;
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     // matrix a_t : transpose of A using MPI collective communication
     float **a_t = generate_matrix(n,m);
-    float *a_t_1D = convertMat2Array(a_t, n, m);
-    
+    float *a_t_1D = generate_array(m * n);
+
     // tranpose algorithm
+    // setting for start time
     if(rank == 0){
         c_time -= MPI_Wtime();
         p_time -= MPI_Wtime();
     }
 
-    int row_per_proc;
-    int rest;
+    int row_per_procs = m / size;
+    int col_per_procs = n / size;
 
-    if(m >= size){
-        row_per_proc = int(m / size);
-    }
-    else{
-        row_per_proc = 1;
-    }
+    float *A_procs = generate_array(row_per_procs * n);
+    float *A_procs_t01 = generate_array(row_per_procs * n);
+    float *A_procs_t02 = generate_array(col_per_procs * m);
+    float *A_procs_t03 = generate_array(row_per_procs * n);
 
-    rest = m % size;
+    MPI_Bcast(A_1D, m * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-    // variable used for parallel computing
-    float *recv_buffer = generate_array(n * row_per_proc + n);
-    float *send_buffer = generate_array(n * row_per_proc + n);
-    float *shuffle_buffer = generate_array(n * row_per_proc + n);
-
-    // define send counts and displacement
-    int *send_counts = new int[size];
-    int *recv_counts = new int[size];
-    int *send_displs = new int[size];
-    int *recv_displs = new int[size];
-    int recv_sum = 0;
-    int send_sum = 0;
-
-    int sum = 0;
-
-    for(int i = 0; i < size; i++){
-        send_counts[i] = row_per_proc * n;
-        send_displs[i] = 0;
-
-        if(rest >0){
-            rest --;
-            send_counts[i] += n;
+    int row_procs_i = rank * row_per_procs;
+    int row_procs_f = (rank + 1) * row_per_procs;
+    
+    for(int i = 0; i < row_per_procs; i++){
+        for(int proc = 0; proc < size; proc ++){
+            for(int j = 0; j < col_per_procs; j++){
+                A_procs[row_per_procs * col_per_procs * proc + col_per_procs * i + j] = A_1D[row_procs_i * n + proc * row_per_procs * col_per_procs + i * col_per_procs + j];
+            }
         }
-        send_displs[i] = send_sum;
-        send_sum += send_counts[i];
     }
+
+    // transpose process 1
+    for(int proc = 0; proc < size; proc ++){
+        for(int i = 0; i < row_per_procs; i++){
+            for(int j = 0; j < col_per_procs; j++){
+                A_procs_t01[row_per_procs * col_per_procs * proc + row_per_procs * j + i] = A_procs[col_per_procs * size * i + proc * col_per_procs + j];
+            }
+        }
+    }
+
+    // transpose process 2
+    MPI_Alltoall(A_procs_t01, row_per_procs * col_per_procs, MPI_FLOAT, A_procs_t02, row_per_procs * col_per_procs, MPI_FLOAT, MPI_COMM_WORLD);
+
+    // transpose process 3
+    for(int proc = 0; proc < size; proc ++){
+        for(int j = 0; j < col_per_procs; j++){
+            for(int i = 0; i < row_per_procs; i++){
+                A_procs_t03[size * row_per_procs *j + proc * row_per_procs + i] = A_procs_t02[proc * row_per_procs * col_per_procs + j * row_per_procs + i];
+            }
+        }
+    }
+
+    MPI_Gather(A_procs_t03, row_per_procs * n, MPI_FLOAT, a_t_1D, row_per_procs * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
     if(rank == 0){
-        for(int i = 0; i < size; i++){
-            cout << "send_count : " << send_counts[i] << endl;
-            cout << "send_displs : " << send_displs[i] << endl;
-        }
-        cout << "rest : " << rest << endl;
-        cout << "send_sum : " << send_sum << endl;
+        c_time += MPI_Wtime();
+        p_time += MPI_Wtime();
     }
 
-    MPI_Scatterv(A_1D, send_counts, send_displs, MPI_FLOAT, recv_buffer, row_per_proc * n + n, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    // MPI_Scatter(A_1D, row_per_proc * n, MPI_FLOAT, recv_buffer, row_per_proc * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    for (int i = 0; i < row_per_proc; i++)
-    {
-        for (int j = 0; j < n; j++)
-        {
-            send_buffer[j * row_per_proc + i] = recv_buffer[i * n + j];
-        }
-    }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    if (rank == 0)
-    {
-        cout << "rank 0" << endl;
-        cout << "recv buffer " << endl;
-        for (int i = 0; i < row_per_proc * n; i++)
-        {
-            printf("%3.3f \t", recv_buffer[i]);
-        }
-        cout << endl;
-        cout << "send buffer " << endl;
-        for (int i = 0; i < row_per_proc * n; i++)
-        {
-            printf("%3.3f \t", send_buffer[i]);
-        }
-        cout << endl;
-    }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    // define recv counts and displacement
-    send_sum = 0;
-    recv_sum = 0;
-    rest = m % size;
-
-    for(int i = 0; i < size; i++){
-        send_counts[i] = row_per_proc;
-        recv_counts[i] = row_per_proc;
-
-        recv_displs[i] = 0;
-        send_displs[i] = 0;
-
-        if(rest >0){
-            rest --;
-            send_counts[i] += 1;
-            recv_counts[i] += 1;
-        }
-        send_displs[i] += send_sum;
-        recv_displs[i] += recv_sum;
-        recv_sum += recv_counts[i];
-        send_sum += send_counts[i];
-    }
-
-    if(rank == 0){
-        for(int i = 0; i < size; i++){
-            cout << "send_count : " << send_counts[i] << endl;
-            cout << "recv_count : " << recv_counts[i] << endl;
-            cout << "send_displs : " << send_displs[i] << endl;
-            cout << "recv_displs : " << recv_displs[i] << endl;
-        }
-        cout << "rest : " << rest << endl;
-        cout << "send_sum : " << send_sum << endl;
-        cout << "recv_sum : " << recv_sum << endl;
-    }
-
-    MPI_Alltoallv(send_buffer, send_counts, send_displs, MPI_FLOAT, shuffle_buffer, recv_counts, recv_displs, MPI_FLOAT, MPI_COMM_WORLD);
-    
-    // MPI_Alltoall(send_buffer, row_per_proc, MPI_FLOAT, shuffle_buffer, row_per_proc, MPI_FLOAT, MPI_COMM_WORLD);
-    
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    if (rank == 0)
-    {
-        cout << "shuffle buffer " << endl;
-        for (int i = 0; i < row_per_proc * n; i++)
-        {
-            printf("%3.3f \t", shuffle_buffer[i]);
-        }
-        cout << endl;
-    }
-
-    MPI_Gather(shuffle_buffer, row_per_proc * n, MPI_FLOAT, a_t_1D, row_per_proc * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
-
-    // define send counts and displacement
-    // int *recv_counts = new int[size];
-    // int *displs = new int[size];
-    // int sum = 0;
-
-    // MPI_Gatherv(send_buffer, row_per_proc * n, MPI_FLOAT, a_t_1D, row_per_proc * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
-
-    // MPI_Barrier(MPI_COMM_WORLD);
-
-    a_t = convertArray2Mat(a_t_1D, m, n);
+    // result
+    a_t = convertArray2Mat(a_t_1D, n, m);
 
     // check the coincidence
     if(rank == 0){
         int is_coincidence = check_coincidency(A_T, a_t, m, n, eps);
-        c_time += MPI_Wtime();
-        p_time += MPI_Wtime();
-
+        
         if(is_coincidence==1){
             cout << "transpose of matrix A complete" << endl;
             cout << "p_time : " << p_time << ", c_time : " << c_time << endl; 
@@ -236,7 +165,7 @@ int main(int argc, char *argv[]){
         }
     }
 
-    if (rank == 0)
+    if (rank == 0 && m < 16 && n < 16)
     {
         print_matrix(a_t, n, m);
     }
@@ -327,12 +256,15 @@ void initiate_matrix(float **A, int m, int n){
 }
 
 float **transpose_matrix(float **A, int m, int n){
+
     float **A_t = generate_matrix(n,m);
     for(int i = 0; i < n; i++){
         for(int j = 0; j < m; j++){
             A_t[i][j] = A[j][i];
         }
     }
+
+    
     return A_t;
 }
 
