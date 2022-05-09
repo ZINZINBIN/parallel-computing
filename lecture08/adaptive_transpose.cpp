@@ -38,10 +38,11 @@ void transpose(float **A, int m, int n);
 int main(int argc, char *argv[]){
 
     int size, rank;
-    int N = 8 * 16;
+    int N = 8 * 8;
     float eps = EPS;
     double p_time = 0; // time for execution
     double c_time = 0; // time for communication
+    double exec_time = 0; // time for total execution
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -72,18 +73,18 @@ int main(int argc, char *argv[]){
     // convert matrix A to 1D array
     float *A_1D = convertMat2Array(A, m, n);
 
-    // transpose of A : real value
+    // transpose of A without MPI: real value
     // time check
+
     auto start = std::chrono::high_resolution_clock::now();
 
     float **A_T = transpose_matrix(A, m, n);
 
     auto end = std::chrono::high_resolution_clock::now();
-    double exec_time = std::chrono::duration<double>(end - start).count();
+    double exec_time_without_mpi = std::chrono::duration<double>(end - start).count();
 
     if(rank == 0){
-        printf("transposition without MPI(s) : %3.5f \n", exec_time);
-        // cout << "transposition without MPI(s) : " << exec_time << endl;
+        printf("transposition without MPI(s) : %3.6f \n", exec_time_without_mpi);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -91,13 +92,6 @@ int main(int argc, char *argv[]){
     // matrix a_t : transpose of A using MPI collective communication
     float **a_t = generate_matrix(n,m);
     float *a_t_1D = generate_array(m * n);
-
-    // tranpose algorithm
-    // setting for start time
-    if(rank == 0){
-        c_time -= MPI_Wtime();
-        p_time -= MPI_Wtime();
-    }
 
     int row_per_procs = m / size;
     int col_per_procs = n / size;
@@ -107,17 +101,48 @@ int main(int argc, char *argv[]){
     float *A_procs_t02 = generate_array(col_per_procs * m);
     float *A_procs_t03 = generate_array(row_per_procs * n);
 
-    MPI_Bcast(A_1D, m * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    // tranpose algorithm
+    // setting for start time
+    if(rank == 0){
+        exec_time -= MPI_Wtime();
+        c_time -= MPI_Wtime();
+    }
+
+    if(rank == 0){
+        MPI_Bcast(A_1D, m * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    if(rank == 0){
+        c_time += MPI_Wtime();
+        printf("# MPI_Bcast c_time : %3.6f \n", c_time);
+        c_time = 0;
+    }
 
     int row_procs_i = rank * row_per_procs;
     int row_procs_f = (rank + 1) * row_per_procs;
-    
+
+    if(rank == 0){
+        p_time -= MPI_Wtime();
+    }
+
     for(int i = 0; i < row_per_procs; i++){
         for(int proc = 0; proc < size; proc ++){
             for(int j = 0; j < col_per_procs; j++){
                 A_procs[row_per_procs * col_per_procs * proc + col_per_procs * i + j] = A_1D[row_procs_i * n + proc * row_per_procs * col_per_procs + i * col_per_procs + j];
             }
         }
+    }
+
+    if(rank == 0){
+        p_time += MPI_Wtime();
+        printf("# process - generate A_procs p_time :  %3.6f \n", p_time);
+        p_time = 0;
+    }
+
+    if(rank == 0){
+        p_time -= MPI_Wtime();
     }
 
     // transpose process 1
@@ -129,8 +154,28 @@ int main(int argc, char *argv[]){
         }
     }
 
+    if(rank == 0){
+        p_time += MPI_Wtime();
+        printf("# process - transpose 01 p_time :  %3.6f \n", p_time);
+        p_time = 0;
+    }
+
+    if(rank == 0){
+        c_time -= MPI_Wtime();
+    }
+
     // transpose process 2
     MPI_Alltoall(A_procs_t01, row_per_procs * col_per_procs, MPI_FLOAT, A_procs_t02, row_per_procs * col_per_procs, MPI_FLOAT, MPI_COMM_WORLD);
+
+    if(rank == 0){
+        c_time += MPI_Wtime();
+        printf("# MPI_Alltoall c_time :  %3.6f \n", c_time);
+        c_time = 0;
+    }
+
+    if(rank == 0){
+        p_time -= MPI_Wtime();
+    }
 
     // transpose process 3
     for(int proc = 0; proc < size; proc ++){
@@ -141,11 +186,24 @@ int main(int argc, char *argv[]){
         }
     }
 
+    if(rank == 0){
+        p_time += MPI_Wtime();
+        printf("# process - transpose 03 p_time :  %3.6f \n", p_time);
+        p_time = 0;
+    }
+
+    if(rank == 0){
+        c_time -= MPI_Wtime();
+    }
+
+    // transpose process 4
     MPI_Gather(A_procs_t03, row_per_procs * n, MPI_FLOAT, a_t_1D, row_per_procs * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
     if(rank == 0){
+        exec_time += MPI_Wtime();
         c_time += MPI_Wtime();
-        p_time += MPI_Wtime();
+        printf("# MPI_Gather p_time :  %3.6f \n", c_time);
+        c_time = 0;
     }
 
     // result
@@ -153,15 +211,14 @@ int main(int argc, char *argv[]){
 
     // check the coincidence
     if(rank == 0){
-        int is_coincidence = check_coincidency(A_T, a_t, m, n, eps);
-        
-        if(is_coincidence==1){
+
+        if(check_coincidency(A_T, a_t, m, n, eps)){
             cout << "transpose of matrix A complete" << endl;
-            cout << "p_time : " << p_time << ", c_time : " << c_time << endl; 
+            printf("transposition with MPI(s) : %3.6f \n", exec_time);
         }
         else{
             cout << "transpose of matrix A : error, wrong result" << endl;
-            cout << "p_time : " << p_time << ", c_time : " << c_time << endl;
+            printf("transposition with MPI(s) : %3.6f \n", exec_time);
         }
     }
 
@@ -175,11 +232,6 @@ int main(int argc, char *argv[]){
 }
 
 float **generate_matrix(int m, int n){
-    /**
-     * @brief generate m x n matrix
-     * m : row
-     * n : col
-     */
     float **A = new float*[m];
     for (int i = 0; i < m; i++){
         A[i] = new float[n];
@@ -188,17 +240,10 @@ float **generate_matrix(int m, int n){
 }
 
 float *generate_array(int m){
-    /**
-     * @brief generate m x 1 array
-     * m : row
-     */
-
     float *B = new float[m];
-
     for(int i = 0; i < m; i ++){
         B[i] = 0.0;
     }
-
     return B;
 }
 
@@ -233,7 +278,7 @@ float **convertArray2Mat(float *B, int m, int n){
 }
 
 float calculate_component(int i, int j, int k, int l){
-    float comp = (float) 1.0 / (sqrt((i-k) * (i-k) + (j-l) * (j-l)) + EPS);
+    float comp = (float) 1.0 / (sqrt((i-k) * (i-k) + (j-l) * (j-l)));
     return comp;
 }
 
@@ -263,8 +308,6 @@ float **transpose_matrix(float **A, int m, int n){
             A_t[i][j] = A[j][i];
         }
     }
-
-    
     return A_t;
 }
 
