@@ -19,7 +19,6 @@
 #include <math.h>
 #include <cmath>
 #define EPS 1e-8
-#define MAXPROC 16
 
 using namespace std;
 
@@ -33,12 +32,11 @@ void initiate_matrix(float **A, int m, int n);
 float **transpose_matrix(float **A, int m, int n);
 int check_coincidency(float **A, float **B, int m, int n, float eps);
 void print_matrix(float **A, int m, int n);
-void transpose(float **A, int m, int n);
 
 int main(int argc, char *argv[]){
 
     int size, rank;
-    int N = 8 * 8;
+    int N = 256;
     float eps = EPS;
     double p_time = 0; // time for execution
     double c_time = 0; // time for communication
@@ -64,6 +62,7 @@ int main(int argc, char *argv[]){
     else{
         if (rank == 0){
             cout << "matrix A : (" << m << "," << n << ")" << endl;
+            cout << "nprocs : " << size << endl;
             if(m < 16 && n < 16){
                 print_matrix(A,m,n);
             }
@@ -84,7 +83,9 @@ int main(int argc, char *argv[]){
     double exec_time_without_mpi = std::chrono::duration<double>(end - start).count();
 
     if(rank == 0){
-        printf("transposition without MPI(s) : %3.6f \n", exec_time_without_mpi);
+        // printf("transposition without MPI(s) : %3.6f \n", exec_time_without_mpi);
+        cout << endl;
+        cout << "-------------------------- Matrix Transposition with MPI ---------------------------" << endl;
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -102,22 +103,8 @@ int main(int argc, char *argv[]){
     float *A_procs_t03 = generate_array(row_per_procs * n);
 
     // tranpose algorithm
-    // setting for start time
     if(rank == 0){
         exec_time -= MPI_Wtime();
-        c_time -= MPI_Wtime();
-    }
-
-    if(rank == 0){
-        MPI_Bcast(A_1D, m * n, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    if(rank == 0){
-        c_time += MPI_Wtime();
-        printf("# MPI_Bcast c_time : %3.6f \n", c_time);
-        c_time = 0;
     }
 
     int row_procs_i = rank * row_per_procs;
@@ -137,7 +124,7 @@ int main(int argc, char *argv[]){
 
     if(rank == 0){
         p_time += MPI_Wtime();
-        printf("# process - generate A_procs p_time :  %3.6f \n", p_time);
+        printf("# p_time : %3.6f, process : generate A_procs\n", p_time);
         p_time = 0;
     }
 
@@ -145,7 +132,7 @@ int main(int argc, char *argv[]){
         p_time -= MPI_Wtime();
     }
 
-    // transpose process 1
+    // transpose process 1 : local transpose
     for(int proc = 0; proc < size; proc ++){
         for(int i = 0; i < row_per_procs; i++){
             for(int j = 0; j < col_per_procs; j++){
@@ -154,9 +141,11 @@ int main(int argc, char *argv[]){
         }
     }
 
+    // MPI_Barrier(MPI_COMM_WORLD);
+
     if(rank == 0){
         p_time += MPI_Wtime();
-        printf("# process - transpose 01 p_time :  %3.6f \n", p_time);
+        printf("# p_time : %3.6f, process : transpose 01\n", p_time);
         p_time = 0;
     }
 
@@ -164,12 +153,12 @@ int main(int argc, char *argv[]){
         c_time -= MPI_Wtime();
     }
 
-    // transpose process 2
+    // transpose process 2 : AlltoAll, rearangement of block matrix
     MPI_Alltoall(A_procs_t01, row_per_procs * col_per_procs, MPI_FLOAT, A_procs_t02, row_per_procs * col_per_procs, MPI_FLOAT, MPI_COMM_WORLD);
 
     if(rank == 0){
         c_time += MPI_Wtime();
-        printf("# MPI_Alltoall c_time :  %3.6f \n", c_time);
+        printf("# c_time : %3.6f, process : MPI_Alltoall\n", c_time);
         c_time = 0;
     }
 
@@ -177,7 +166,7 @@ int main(int argc, char *argv[]){
         p_time -= MPI_Wtime();
     }
 
-    // transpose process 3
+    // transpose process 3 : rearange each block matrix with correct order
     for(int proc = 0; proc < size; proc ++){
         for(int j = 0; j < col_per_procs; j++){
             for(int i = 0; i < row_per_procs; i++){
@@ -186,9 +175,11 @@ int main(int argc, char *argv[]){
         }
     }
 
+    // MPI_Barrier(MPI_COMM_WORLD);
+
     if(rank == 0){
         p_time += MPI_Wtime();
-        printf("# process - transpose 03 p_time :  %3.6f \n", p_time);
+        printf("# p_time : %3.6f, process : transpose 03\n", p_time);
         p_time = 0;
     }
 
@@ -202,7 +193,7 @@ int main(int argc, char *argv[]){
     if(rank == 0){
         exec_time += MPI_Wtime();
         c_time += MPI_Wtime();
-        printf("# MPI_Gather p_time :  %3.6f \n", c_time);
+        printf("# c_time : %3.6f, process : MPI_Gather\n", c_time);
         c_time = 0;
     }
 
@@ -211,14 +202,18 @@ int main(int argc, char *argv[]){
 
     // check the coincidence
     if(rank == 0){
+        cout << "------------------------------------------------------------------------------------" << endl;
+        cout << endl;
 
         if(check_coincidency(A_T, a_t, m, n, eps)){
-            cout << "transpose of matrix A complete" << endl;
-            printf("transposition with MPI(s) : %3.6f \n", exec_time);
+            cout <<"transposition of matrix A complete, all components are same" << endl;
+            printf("exec_time : %3.6f, transposition without MPI(s)\n", exec_time_without_mpi);
+            printf("exec_time : %3.6f, transposition with MPI(s)\n", exec_time);
         }
         else{
             cout << "transpose of matrix A : error, wrong result" << endl;
-            printf("transposition with MPI(s) : %3.6f \n", exec_time);
+            printf("exec_time : %3.6f, transposition without MPI(s)\n", exec_time_without_mpi);
+            printf("exec_time : %3.6f, transposition with MPI(s)\n", exec_time);
         }
     }
 
@@ -228,6 +223,17 @@ int main(int argc, char *argv[]){
     }
 
     MPI_Finalize();
+
+    delete A;
+    delete A_T;
+    delete A_1D;
+    delete A_procs;
+    delete A_procs_t01;
+    delete A_procs_t02;
+    delete A_procs_t03;
+    delete a_t_1D;
+    delete a_t;
+
     return 0;
 }
 
@@ -309,16 +315,6 @@ float **transpose_matrix(float **A, int m, int n){
         }
     }
     return A_t;
-}
-
-void transpose(float **A, int m, int n){
-    for(int i = 0; i < m; i++){
-        for(int j = i; j < n; j++){
-            if(i != j){
-                swap(A[i][j], A[j][i]);
-            }
-        }
-    }
 }
 
 int check_coincidency(float **A, float **B, int m, int n, float eps){
