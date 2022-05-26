@@ -9,7 +9,7 @@
 7. lecture 07 : MPI(Collective communicator)
 8. lecture 08 : MPI(Communicator, hw : Matrix transpose using collective communicator)
 9. lecture 09 : CUDA(Basic, kernel, Matrix transpose, add etc)
-10. lecture 10 : CUDA()
+10. lecture 10 : CUDA(Asynchoronous Transfer,Pinned memory, Pitch memory, Reduction, etc)
 11. lecture 11 : FDM
 
 ### Structure
