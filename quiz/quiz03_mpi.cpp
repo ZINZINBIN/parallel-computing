@@ -31,6 +31,16 @@ int compute_avg(int * arr, int M){
     return int(avg / M);
 }
 
+float generate_random_MC(){
+    // generate random number
+    float value = 0;
+    return value;
+}
+
+float integrate_func(float x, float a, float b, float c){
+    return a*x*x + b*x + c;
+}
+
 int main(int argc, char *argv[])
 {
     int rank, size;
@@ -73,6 +83,77 @@ int main(int argc, char *argv[])
         for(int i = 0; i < size; i++){
             cout << "avg_per_procs : " << recv_avg_arrs[i] << endl;
         }
+    }
+
+    // communicator
+    // process
+    // Group extractor : extracting from a communicator its group : MPI_Comm_group(MPI_Comm comm, MPI_Group *group)
+    // Manipulating group : group을 생성하여, communicator 구축에 필요한 정보(grouping)을 구성
+    // checking group : group size나 rank 혹은 compare 진행
+    // create communicator : (1) MPI_Comm_create을 이용해 group으로부터 생성 가능 (2) MPI_Comm_split을 이용해 직접 쪼개어 생성 가능 (3) MPI_Comm_dup을 통해 복제
+    // clean communicator : MPI_Group_free와 MPI_Comm_free을 통해 할당된 메모리를 다시 반환한다. 
+
+    MPI_Comm world, workers;
+    MPI_Group world_group, worker_group;
+
+    int ranks[1];
+
+    world = MPI_COMM_WORLD;
+    
+    int server = size - 1;
+    ranks[0] = server;
+
+    MPI_Comm_group(world, &world_group); // Communicator로부터 group의 주소값(혹은 포인터형 변수)를 보낸다
+    MPI_Group_excl(world_group, 1, ranks, &worker_group);
+    MPI_Comm_create(world, worker_group, &workers);
+
+    if(rank == 0){
+        int group_size;
+
+        MPI_Group_size(world_group, &group_size);
+        cout << "world : " << group_size << endl;
+
+        MPI_Group_size(worker_group, &group_size);
+        cout << "worker group : " << group_size << endl;
+    }
+
+    MPI_Group_free(&worker_group);
+    MPI_Group_free(&world_group);
+
+    // Monte-Carlo integration code
+    MPI_Comm world_, workers_;
+    world_ = MPI_COMM_WORLD;
+    server = size - 1;
+
+    int key = 0;
+    int color = 0;
+
+    if(rank == 0){
+        color = 1;
+    }
+    MPI_Comm_split(world_, color, key, &workers_);
+
+    if(rank == 0){
+
+    }
+
+    // Cartesian topology
+    MPI_Comm old_comm, new_comm;
+    MPI_Group old_group;
+
+    old_comm = MPI_COMM_WORLD;
+
+    int ndims = 2;
+    int dims[2] = {4,3};
+    int periodic[2] = {0,1};
+    int reorder = 1;
+    int coord[2];
+
+    MPI_Cart_create(old_comm, ndims, dims, periodic, reorder, &new_comm);
+
+    if(rank == 5){
+        MPI_Cart_coords(new_comm, rank, 2, coord);
+        cout << "coord[0] : " << coord[0] << ", coord[1] : " << coord[1] << endl;
     }
 
     // generate new datatype for MPI
