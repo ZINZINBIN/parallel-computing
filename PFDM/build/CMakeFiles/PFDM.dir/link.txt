@@ -1,0 +1,1 @@
+/usr/bin/mpic++   -std=c++17 -O2 -w  -fopenmp  -rdynamic CMakeFiles/PFDM.dir/source/Control.o CMakeFiles/PFDM.dir/source/Geometry.o CMakeFiles/PFDM.dir/source/IO.o CMakeFiles/PFDM.dir/source/Main.o CMakeFiles/PFDM.dir/source/Solver.o CMakeFiles/PFDM.dir/source/Util.o CMakeFiles/PFDM.dir/source/Xsec.o  -o PFDM -lstdc++fs 

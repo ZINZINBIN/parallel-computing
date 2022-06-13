@@ -1,0 +1,25 @@
+CASEID Simple
+
+XSEC
+ LIB_TYPE 	 1
+ GROUP_SPEC  2
+ DIRECTORY 	 ./xs/IAEA_3D.xs
+OPTION
+ OUTER_CRITERIA 1.e-6  1.e-5 500   ! k, psi, noutmax
+ INNER_CRITERIA 0.01  50          ! eps in, ninmax
+ MESH           2 2 2          ! nx, ny, nz
+ 
+GEOMETRY  
+ PITCH		 2 ! side length of pin, side length of assembly 
+ AX_MESH	 2
+ 
+ ALBEDO 0.0 0.0 0.0 0.0 0.0 0.0 ! wensdu 
+ 
+ ASSEMBLY 1 1
+ ASSEMBLY 2 2
+ ASSEMBLY 3 2
+ ASSEMBLY 4 3
+ ASSEMBLY 5 4
+
+ RAD_CONF 360 EDGE
+  1

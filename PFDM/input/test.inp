@@ -1,0 +1,40 @@
+CASEID TEST
+
+XSEC
+ LIB_TYPE 	: 1
+ GROUP_SPEC : 7
+ DIRECTORY 	: F:\KSJ\CODE_C++\montecrlo_test\input\c5g7.xslib
+ 
+OPTION
+ 100000 500 100 !number of neutron, total, inactive
+ 
+
+ 
+GEOMETRY
+ NPINS		: 1!number of pin, 
+ PITCH		: 1.26 1.26 ! side length of pin, side length of assembly
+ AX_MESH	: 7.14
+ 
+ ALBEDO 0.0 0.0 0.0 0.0 0.0 0.0 ! wensdu
+
+ CELL 1 0.540 / 1 7
+ CELL 2 0.540 / 2 7
+ CELL 3 0.540 / 3 7
+ CELL 4 0.540 / 4 7
+ CELL 5 0.540 / 5 7
+ CELL 6 0.540 / 6 7
+ CELL 7  / 1
+ CELL 8 0.540 / 8 7
+
+ PIN 1 7
+ PIN 2 2
+ 
+ ASSEMBLY 1 360 1   !--- 1st Level UO2
+ 1
+ 
+ ASSEMBLY 2 360 1
+ 2
+ 
+ RAD_CONF 360 EDGE
+ 1
+ 
