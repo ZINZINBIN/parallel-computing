@@ -11,6 +11,8 @@
 9. lecture 09 : CUDA(Basic, kernel, Matrix transpose, add etc)
 10. lecture 10 : CUDA(Asynchoronous Transfer,Pinned memory, Pitch memory, Reduction, etc)
 11. lecture 11 : FDM
+12. quiz : codes for preparing quiz
+13. PFDM : final-project, 3D neutron transport equation solver using Bi-CGSTAB(S.J.Kwon)
 
 ### Structure
 - codes(main.cpp, etc..) and lecture slide(.pdf) are included in each folder
