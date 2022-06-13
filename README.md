@@ -17,4 +17,4 @@
 ### Structure
 - codes(main.cpp, etc..) and lecture slide(.pdf) are included in each folder
 - Homework codes are included in lecture 03 and lecture 08 folder
-- Final Project code will be uploaded soon
+- Final Project code : PFDM (3D neutron transport euqation solver using Bi-CGSTAB, S.J.Kwon)
